@@ -20,6 +20,11 @@ The goal of this repository is to build a strong foundation in agent-based syste
 - Tested endpoints using `curl`
 - Understood basic concepts like ASGI servers and Uvicorn
 
+### ✅ Day 3
+- Path & query parameters
+- Status codes
+- Controller-style API design
+
 ---
 
 ## 🛠️ Tech Stack
