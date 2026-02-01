@@ -25,6 +25,11 @@ The goal of this repository is to build a strong foundation in agent-based syste
 - Status codes
 - Controller-style API design
 
+### ✅ Day 4
+- Async vs blocking
+- Non-blocking FastAPI endpoints
+- Why LLM calls must be async
+
 ---
 
 ## 🛠️ Tech Stack

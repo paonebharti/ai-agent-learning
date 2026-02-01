@@ -1,3 +1,4 @@
+import time, asyncio
 from fastapi import FastAPI, HTTPException, status
 from app.schemas import UserRequest, UserResponse
 
@@ -38,3 +39,27 @@ def search_users(q: str, limit: int = 10):
         "limit": limit,
         "results": []
     }
+
+
+# Blocking vs Async Endpoint (Feel the difference)
+
+# ❌ Blocking endpoint
+@app.get("/blocking")
+def blocking():
+    print("blocking start")
+    time.sleep(10)
+    print("blocking end")
+    return {"status": "blocking done"}
+
+# ✅ Async endpoint
+@app.get("/async")
+async def async_endpoint():
+    print("async start")
+    await asyncio.sleep(10)
+    print("async end")
+    return {"status": "async done"}
+
+@app.get("/ping")
+def ping():
+    print("ping")
+    return {"ping": "pong"}
