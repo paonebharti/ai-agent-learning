@@ -30,6 +30,11 @@ The goal of this repository is to build a strong foundation in agent-based syste
 - Non-blocking FastAPI endpoints
 - Why LLM calls must be async
 
+### ✅ Day 5
+- Service layer design
+- LLM abstraction
+- Async service calls
+
 ---
 
 ## 🛠️ Tech Stack
