@@ -35,6 +35,11 @@ The goal of this repository is to build a strong foundation in agent-based syste
 - LLM abstraction
 - Async service calls
 
+### ✅ Day 6
+- LLM timeouts
+- Error handling
+- Resilient service design
+
 ---
 
 ## 🛠️ Tech Stack

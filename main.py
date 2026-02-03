@@ -1,6 +1,6 @@
 import time, asyncio
 from fastapi import FastAPI, HTTPException, status
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, LLMServiceError
 from app.schemas import UserRequest, UserResponse
 
 app = FastAPI()
@@ -8,8 +8,11 @@ llm_service = LLMService()
 
 @app.post("/generate")
 async def generate_text(prompt: str):
-    result = await llm_service.generate(prompt)
-    return {"result": result}
+    try:
+        result = await llm_service.generate(prompt)
+        return {"result": result}
+    except LLMServiceError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 @app.get("/health")
 def health_check():
