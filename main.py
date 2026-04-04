@@ -2,9 +2,18 @@ import time, asyncio
 from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
 from app.schemas import UserRequest, UserResponse
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 app = FastAPI()
-llm_service = LLMService()
+use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
+llm_service = LLMService(use_mock=use_mock)
+
+@app.get("/ask")
+async def ask(q: str):
+    answer = await llm_service.complete(q)
+    return {"answer": answer}
 
 @app.post("/generate")
 async def generate_text(prompt: str):
