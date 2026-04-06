@@ -1,25 +1,21 @@
-import time, asyncio
 from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
 from app.schemas import UserRequest, UserResponse
 from dotenv import load_dotenv
 import os
+
 load_dotenv()
 
 app = FastAPI()
+
 use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 llm_service = LLMService(use_mock=use_mock)
 
 @app.get("/ask")
 async def ask(q: str):
-    answer = await llm_service.complete(q)
-    return {"answer": answer}
-
-@app.post("/generate")
-async def generate_text(prompt: str):
     try:
-        result = await llm_service.generate(prompt)
-        return {"result": result}
+        answer = await llm_service.complete(q)
+        return {"answer": answer}
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -59,26 +55,6 @@ def search_users(q: str, limit: int = 10):
         "results": []
     }
 
-
-# Blocking vs Async Endpoint (Feel the difference)
-
-# ❌ Blocking endpoint
-@app.get("/blocking")
-def blocking():
-    print("blocking start")
-    time.sleep(10)
-    print("blocking end")
-    return {"status": "blocking done"}
-
-# ✅ Async endpoint
-@app.get("/async")
-async def async_endpoint():
-    print("async start")
-    await asyncio.sleep(10)
-    print("async end")
-    return {"status": "async done"}
-
 @app.get("/ping")
 def ping():
-    print("ping")
     return {"ping": "pong"}

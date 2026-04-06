@@ -40,7 +40,7 @@ The goal of this repository is to build a strong foundation in agent-based syste
 - Error handling
 - Resilient service design
 
-### Day 7-8 — LLM Integration & Service Abstraction
+### ✅ Day 7-8 — LLM Integration & Service Abstraction
 
 #### What I built
 - Integrated a real LLM using an async client
@@ -77,6 +77,51 @@ Controller (FastAPI) → Service Layer (LLMService) → External LLM API
 #### Outcome
 A production-ready foundation for integrating AI into backend systems with proper abstraction, error handling, and cost control.
 
+### ✅ Day 9 — Prompt Engineering
+
+#### What I learned
+- Difference between system and user messages
+- How to control LLM behavior using system prompts
+- Importance of deterministic outputs (temperature=0)
+- Designing structured responses (JSON output)
+- https://www.promptingguide.ai/techniques/cot reference for more about Prompt Engineering
+
+#### Key Insight
+Prompts are not strings — they are contracts that define system behavior.
+
+### ✅ Day 10 — Function Calling (Agents Begin Here)
+
+#### What I built
+- Integrated a real weather API (OpenWeatherMap) into the agent
+- Implemented function calling — LLM decides when to call a tool
+- Built a two-step LLM flow: first call decides tool usage, second call forms the final response
+
+#### Key Features
+- Tool definition using OpenAI function calling schema
+- LLM-driven tool routing via `tool_choice="auto"`
+- Real HTTP weather data fetched via `httpx`
+
+#### Architecture
+User → `/ask` → LLMService → Tool decision → WeatherService → Real API → LLMService → Response
+
+#### Key Design Decisions
+- Tool definitions live as a class-level constant (`TOOLS`) for easy extensibility
+- WeatherService stays as a plain sync service — async wrapping handled at the call site
+- System prompt explicitly instructs LLM to use tools — model won't call tools reliably without this
+
+#### Key Learnings
+- LLMs won't use tools unless the prompt explicitly instructs them to
+- `asyncio.to_thread(fn, arg)` — function and arguments are passed separately, never call the function inline
+- Two LLM calls are needed: one to decide the tool, one to form the final answer
+- Prompt design and tool calling are tightly coupled
+
+#### Challenges Faced
+- LLM was answering weather questions from its own knowledge — fixed by updating system prompt
+- `asyncio.to_thread` TypeError — was calling the function instead of passing it as a reference
+- OpenWeatherMap API key takes ~10 min to activate after signup
+
+#### Outcome
+A working agent that routes user queries to real-world tools and responds with live data.
 ---
 
 ## 🛠️ Tech Stack
