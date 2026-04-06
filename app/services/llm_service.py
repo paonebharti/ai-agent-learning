@@ -1,18 +1,37 @@
 import asyncio
+import json
 from openai import AsyncOpenAI
-
+from app.services.weather_service import WeatherService
 
 class LLMServiceError(Exception):
     pass
 
-
 class LLMService:
+    TOOLS = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get current weather for a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "city": {"type": "string"}
+                    },
+                    "required": ["city"]
+                }
+            }
+        }
+    ]
+
     def __init__(self, use_mock: bool = False):
         self.client = AsyncOpenAI()
         self.use_mock = use_mock
 
         self.request_count = 0
         self.max_requests = 20  # safety limit
+
+        self.weather_service = WeatherService()
 
     async def complete(self, prompt: str) -> str:
         if self.request_count >= self.max_requests:
@@ -22,26 +41,59 @@ class LLMService:
 
         try:
             if self.use_mock:
-                print("🟡 USING MOCK LLM")
                 return await self._mock_response(prompt)
 
-            print("🟢 USING REAL LLM API")
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant with access to tools. "
+                        "When the user asks about weather, you MUST use the get_weather tool. "
+                        "Never answer weather questions from your own knowledge."
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ]
 
-            # ✅ REAL LLM call with timeout
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
                     model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": prompt}
-                    ],
+                    messages=messages,
+                    tools=self.TOOLS,
+                    tool_choice="auto",
                     temperature=0.2,
                     max_tokens=100
                 ),
                 timeout=5
             )
 
-            return response.choices[0].message.content
+            message = response.choices[0].message
+
+            if message.tool_calls:
+                tool_call = message.tool_calls[0]
+
+                tool_result = await self._handle_tool_call(tool_call)
+
+                messages.append(message)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result
+                })
+
+                final_response = await asyncio.wait_for(
+                    self.client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        temperature=0.2,
+                        max_tokens=100
+                    ),
+                    timeout=5
+                )
+
+                return final_response.choices[0].message.content
+
+            return message.content
 
         except asyncio.TimeoutError:
             raise LLMServiceError("LLM request timed out")
@@ -53,13 +105,11 @@ class LLMService:
         await asyncio.sleep(1)
         return f"[MOCK RESPONSE]: {prompt}"
 
-    async def generate(self, prompt: str) -> str:
-        try:
-            # simulate timeout-prone external call
-            await asyncio.wait_for(self._call_llm(prompt), timeout=3)
-            return f"[LLM response to]: {prompt}"
-        except asyncio.TimeoutError:
-            raise LLMServiceError("LLM request timed out")
+    async def _handle_tool_call(self, tool_call):
+        function_name = tool_call.function.name
+        args = json.loads(tool_call.function.arguments)
 
-    async def _call_llm(self, prompt: str):
-        await asyncio.sleep(5)  # simulate slow LLM
+        if function_name == "get_weather":
+            return await asyncio.to_thread(self.weather_service.get_weather, args["city"])
+
+        return "Unknown tool"
