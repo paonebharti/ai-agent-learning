@@ -19,6 +19,11 @@ async def ask(q: str):
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+@app.delete("/memory/clear")
+def clear_memory():
+    llm_service.memory.clear()
+    return {"status": "memory cleared"}
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}

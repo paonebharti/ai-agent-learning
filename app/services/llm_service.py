@@ -1,6 +1,7 @@
-import asyncio
 import json
+import asyncio
 from openai import AsyncOpenAI
+from app.services.memory_service import MemoryService
 from app.services.weather_service import WeatherService
 from app.services.currency_service import CurrencyService
 
@@ -41,13 +42,21 @@ class LLMService:
         }
     ]
 
+    SYSTEM_PROMPT = (
+        "You are a helpful assistant with access to tools. "
+        "When the user asks about weather, use the get_weather tool. "
+        "When the user asks about currency conversion, use the currency_converter tool. "
+        "Never answer these questions from your own knowledge."
+    )
+
     def __init__(self, use_mock: bool = False):
         self.client = AsyncOpenAI()
         self.use_mock = use_mock
         self.request_count = 0
-        self.max_requests = 20  # safety limit
+        self.max_requests = 20
         self.weather_service = WeatherService()
         self.currency_service = CurrencyService()
+        self.memory = MemoryService(max_messages=20)
 
     async def complete(self, prompt: str) -> str:
         if self.request_count >= self.max_requests:
@@ -58,20 +67,16 @@ class LLMService:
         try:
             if self.use_mock:
                 return await self._mock_response(prompt)
+            
+            # Step 1: add user message to memory
+            self.memory.add_user_message(prompt)
 
+            # Step 2: build messages — system prompt + full history
             messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful assistant with access to tools. "
-                        "When the user asks about weather, you MUST use the get_weather tool. "
-                        "When the user asks about currency conversion, use the currency_converter tool. "
-                        "Never answer weather questions from your own knowledge."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ]
+                {"role": "system", "content": self.SYSTEM_PROMPT}
+            ] + self.memory.get_history()
 
+            # Step 3: first LLM call
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -86,31 +91,40 @@ class LLMService:
 
             message = response.choices[0].message
 
+            # Step 4: tool call handling
             if message.tool_calls:
                 tool_call = message.tool_calls[0]
 
                 tool_result = await self._handle_tool_call(tool_call)
 
-                messages.append(message)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": tool_result
-                })
+                # save tool interaction to memory
+                self.memory.add_tool_interaction(
+                    message, tool_call.id, tool_result
+                )
+
+                # Step 5: second LLM call with tool result
+                messages = [
+                    {"role": "system", "content": self.SYSTEM_PROMPT}
+                ] + self.memory.get_history()
 
                 final_response = await asyncio.wait_for(
                     self.client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=messages,
                         temperature=0.2,
-                        max_tokens=100
+                        max_tokens=200
                     ),
-                    timeout=5
+                    timeout=10
                 )
 
-                return final_response.choices[0].message.content
+                answer = final_response.choices[0].message.content
+            else:
+                answer = message.content
 
-            return message.content
+            # Step 6: save assistant response to memory
+            self.memory.add_assistant_message(answer)
+
+            return answer
 
         except asyncio.TimeoutError:
             raise LLMServiceError("LLM request timed out")

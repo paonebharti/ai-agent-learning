@@ -128,6 +128,38 @@ A working agent that routes user queries to real-world tools and responds with l
 - Added a second real-world service (CurrencyService)
 - Extended TOOLS with a multi-parameter tool definition
 - LLM now routes across multiple tools autonomously
+
+### ✅ Day 12 — Agent Memory (Conversation History)
+
+#### What I built
+- Built a `MemoryService` to store conversation history in-memory
+- Agent now remembers context across multiple `/ask` calls
+- Tool interactions (both assistant tool call + tool result) are saved to memory
+- Added `/memory/clear` endpoint to reset conversation without restarting server
+
+#### Architecture
+User → `/ask` → LLMService → MemoryService (inject history) → LLM → MemoryService (save response) → User
+
+#### Key Design Decisions
+- Memory is invisible to the LLM — it's injected silently as message history on every request
+- System prompt is always prepended fresh — never stored in memory
+- `max_messages=20` prevents context window overflow
+- Tool interactions are always saved in pairs (assistant tool call + tool result) — breaking this pair causes LLM errors
+- `get_history()` returns a copy to prevent external mutation of internal state
+- Single responsibility — `_handle_tool_call` only executes tools, memory saving is handled by `complete()`
+
+#### Key Learnings
+- Memory is not a tool — it's internal bookkeeping the LLM never directly sees or calls
+- LLM sees conversation history as just another part of `messages` array
+- Tool call + tool result must always stay paired in history
+- Memory grows with every turn — trimming is essential for long conversations
+
+#### Challenges Faced
+- Understanding why `add_tool_interaction` wasn't being called for non-tool queries — it only fires when LLM requests a tool, which is correct behavior
+- Distinguishing between memory (internal) and tools (external capabilities)
+
+#### Outcome
+A stateful agent that remembers conversation context, handles tools correctly across turns, and maintains clean separation between memory management and tool execution.
 ---
 
 ## 🛠️ Tech Stack
