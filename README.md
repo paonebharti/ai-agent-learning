@@ -122,6 +122,12 @@ User → `/ask` → LLMService → Tool decision → WeatherService → Real API
 
 #### Outcome
 A working agent that routes user queries to real-world tools and responds with live data.
+
+### ✅ Day 11 — Multi-tool Orchestration
+
+- Added a second real-world service (CurrencyService)
+- Extended TOOLS with a multi-parameter tool definition
+- LLM now routes across multiple tools autonomously
 ---
 
 ## 🛠️ Tech Stack

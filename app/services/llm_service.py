@@ -2,6 +2,7 @@ import asyncio
 import json
 from openai import AsyncOpenAI
 from app.services.weather_service import WeatherService
+from app.services.currency_service import CurrencyService
 
 class LLMServiceError(Exception):
     pass
@@ -21,17 +22,32 @@ class LLMService:
                     "required": ["city"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "currency_converter",
+                "description": "Convert an amount from one currency to another",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "amount": {"type": "number"},
+                        "from_currency": {"type": "string", "description": "e.g. USD, INR, EUR"},
+                        "to_currency": {"type": "string", "description": "e.g. USD, INR, EUR"}
+                    },
+                    "required": ["amount", "from_currency", "to_currency"]
+                }
+            }
         }
     ]
 
     def __init__(self, use_mock: bool = False):
         self.client = AsyncOpenAI()
         self.use_mock = use_mock
-
         self.request_count = 0
         self.max_requests = 20  # safety limit
-
         self.weather_service = WeatherService()
+        self.currency_service = CurrencyService()
 
     async def complete(self, prompt: str) -> str:
         if self.request_count >= self.max_requests:
@@ -49,6 +65,7 @@ class LLMService:
                     "content": (
                         "You are a helpful assistant with access to tools. "
                         "When the user asks about weather, you MUST use the get_weather tool. "
+                        "When the user asks about currency conversion, use the currency_converter tool. "
                         "Never answer weather questions from your own knowledge."
                     )
                 },
@@ -110,6 +127,17 @@ class LLMService:
         args = json.loads(tool_call.function.arguments)
 
         if function_name == "get_weather":
-            return await asyncio.to_thread(self.weather_service.get_weather, args["city"])
+            return await asyncio.to_thread(
+                self.weather_service.get_weather,
+                args["city"]
+            )
+        
+        if function_name == "currency_converter":
+            return await asyncio.to_thread(
+                self.currency_service.convert,
+                args["amount"],
+                args["from_currency"],
+                args["to_currency"]
+            )
 
         return "Unknown tool"
