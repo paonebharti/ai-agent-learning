@@ -56,7 +56,10 @@ class LLMService:
         self.max_requests = 20
         self.weather_service = WeatherService()
         self.currency_service = CurrencyService()
-        self.memory = MemoryService(max_messages=20)
+        self.memory = MemoryService(
+            max_messages=20,
+            persist_path="memory.json"
+        )
 
     async def complete(self, prompt: str) -> str:
         if self.request_count >= self.max_requests:

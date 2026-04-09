@@ -160,6 +160,27 @@ User → `/ask` → LLMService → MemoryService (inject history) → LLM → Me
 
 #### Outcome
 A stateful agent that remembers conversation context, handles tools correctly across turns, and maintains clean separation between memory management and tool execution.
+
+### ✅ Day 13 (Bonus) — File-Based Memory Persistence
+
+#### What I built
+- Extended `MemoryService` to optionally persist conversation history to a JSON file
+- Memory now survives server restarts
+- `persist_path` is optional — passing `None` keeps original in-memory behavior
+
+#### Key Design Decisions
+- File persistence is opt-in via `persist_path` parameter — no breaking changes to existing behavior
+- `_save()` is called after every mutation (add/clear) to keep file in sync
+- `_load()` is called once at startup — fails gracefully if file doesn't exist or is corrupt
+- `memory.json` added to `.gitignore` — conversation history is personal, not code
+
+#### Key Learnings
+- Separating concerns: persistence is a layer on top of memory, not mixed into it
+- Graceful degradation — if the file is missing or corrupt, agent starts fresh without crashing
+- Optional parameters keep backward compatibility clean
+
+#### Outcome
+Agent memory now persists across server restarts with zero changes to the rest of the codebase.
 ---
 
 ## 🛠️ Tech Stack
