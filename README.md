@@ -231,13 +231,116 @@ Instead of pasting an entire document into the LLM, you:
 #### Outcome
 Strong conceptual foundation for Day 15 where we build a working RAG pipeline using ChromaDB and OpenAI embeddings.
 
+### ✅ Day 15 — Simple RAG Pipeline
+
+#### What I built
+- Built a `RAGService` that embeds a knowledge base into ChromaDB at startup
+- Implemented semantic search — converts user query to embedding and retrieves top 2 similar chunks
+- Added `/rag` endpoint — retrieves relevant context then passes it to LLM for answering
+- Added `complete_with_context()` to `LLMService` — separate method for context-grounded responses
+- Agent correctly says "I don't have that information" when answer is not in the knowledge base
+
+#### Architecture
+User → `/rag` → RAGService (retrieve chunks) → LLMService (answer from context) → User
+
+#### Indexing Flow (startup)
+Knowledge base chunks → OpenAI embeddings → ChromaDB vector store
+
+#### Query Flow (per request)
+User question → embedding → ChromaDB similarity search → top 2 chunks → injected as context into LLM prompt → answer
+
+#### Key Design Decisions
+- `complete_with_context()` is separate from `complete()` — RAG bypasses memory and tools, it has a different responsibility
+- `temperature=0` for RAG responses — answers must be grounded in context, not creative
+- `top_k=2` — inject only the most relevant chunks, not everything, to stay within token limits
+- System prompt explicitly instructs LLM to use only provided context — prevents hallucination
+- ChromaDB runs locally — no external service needed during development
+
+#### Chunk Size
+In Day 15 we manually wrote each chunk — one topic per string, roughly 1-2 sentences each.
+There was no explicit chunking logic because we controlled the knowledge base directly.
+
+In a real RAG system loading a PDF or large document, chunk size is defined explicitly:
+- `chunk_size` — max characters or tokens per chunk (e.g. 500)
+- `chunk_overlap` — repeated characters at the boundary edge of adjacent chunks to avoid
+  losing context when a fixed-size splitter cuts mid-sentence
+
+Chunk size is always a design decision you make — the LLM does not decide it.
+
+#### Topic vs Idea vs Context
+These three terms mean different things in RAG:
+
+- **Topic** — the broad subject a chunk is about (e.g. "Refunds", "Shipping")
+- **Idea** — one complete thought within a topic (e.g. "Refunds take 7 days")
+- **Context** — the retrieved chunks combined and injected into the LLM prompt to answer from
+
+One topic can contain multiple ideas. One document can have many topics.
+You chunk by topic or idea. You retrieve context. The LLM answers from context.
+
+#### Chunk Overlap — Clarification
+Chunk overlap does NOT mean mixing different topics together. It means repeating a few
+characters at the boundary edge of the same topic — only needed when a fixed-size splitter
+blindly cuts at character count and splits a sentence in half.
+
+When splitting by paragraph, overlap is less critical because paragraphs naturally end at
+complete thoughts.
+
+#### Where does `collection.query()` come from?
+We never wrote a `query()` method ourselves. It is a built-in method provided by ChromaDB on
+every `Collection` object — similar to how ActiveRecord gives you `where()` and `find()` on
+every Rails model without you writing them.
+
+ChromaDB built-in collection methods:
+- `collection.add()` — store documents + embeddings
+- `collection.query()` — find most similar documents by embedding
+- `collection.get()` — fetch documents by ID
+- `collection.delete()` — remove documents
+- `collection.update()` — update existing documents
+
+ChromaDB handles all the similarity math (cosine similarity, ranking, top K) internally.
+
+#### Key Learnings
+- Both the query and the chunks map to the same 1536-dimension vector space — length mismatch doesn't matter
+- Chunk by topic or idea — one complete thought per chunk keeps retrieval clean
+- Chunk overlap protects boundaries, not mixes topics
+- RAG and memory serve different purposes — memory tracks conversation, RAG retrieves external knowledge
+- Grounding the LLM in context with `temperature=0` dramatically reduces hallucination
+- Never use a method without knowing where it comes from — understand if it's yours or the library's
+
+#### Outcome
+A working RAG pipeline that retrieves semantically relevant knowledge and answers user questions
+accurately from a local vector store — without hallucinating answers outside its knowledge base.
+
 ---
 
 ## 🛠️ Tech Stack
-- Python
-- FastAPI
-- Uvicorn
-- Pydantic
+
+### Core Framework
+- **FastAPI** — web framework, API layer
+- **Uvicorn** — ASGI server that runs FastAPI
+- **Pydantic** — request/response validation and schemas
+
+### LLM & AI
+- **openai (AsyncOpenAI)** — LLM calls via GPT-4o-mini
+- **openai (OpenAI sync)** — embedding generation via text-embedding-3-small
+- **chromadb** — local vector store for RAG
+
+### External APIs
+- **OpenWeatherMap API** — real weather data
+- **ExchangeRate API** — real currency conversion
+
+### HTTP & Async
+- **httpx** — sync HTTP client for external API calls (WeatherService, CurrencyService)
+- **asyncio** — async/await, timeout handling, thread pool via `asyncio.to_thread`
+
+### Configuration & Environment
+- **python-dotenv** — loads `.env` file for API keys
+
+### Storage
+- **json (stdlib)** — file-based memory persistence
+
+### Language
+- **Python 3.12**
 
 ---
 

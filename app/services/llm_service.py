@@ -70,16 +70,13 @@ class LLMService:
         try:
             if self.use_mock:
                 return await self._mock_response(prompt)
-            
-            # Step 1: add user message to memory
+
             self.memory.add_user_message(prompt)
 
-            # Step 2: build messages — system prompt + full history
             messages = [
                 {"role": "system", "content": self.SYSTEM_PROMPT}
             ] + self.memory.get_history()
 
-            # Step 3: first LLM call
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -94,18 +91,15 @@ class LLMService:
 
             message = response.choices[0].message
 
-            # Step 4: tool call handling
             if message.tool_calls:
                 tool_call = message.tool_calls[0]
 
                 tool_result = await self._handle_tool_call(tool_call)
 
-                # save tool interaction to memory
                 self.memory.add_tool_interaction(
                     message, tool_call.id, tool_result
                 )
 
-                # Step 5: second LLM call with tool result
                 messages = [
                     {"role": "system", "content": self.SYSTEM_PROMPT}
                 ] + self.memory.get_history()
@@ -124,7 +118,6 @@ class LLMService:
             else:
                 answer = message.content
 
-            # Step 6: save assistant response to memory
             self.memory.add_assistant_message(answer)
 
             return answer
@@ -132,6 +125,38 @@ class LLMService:
         except asyncio.TimeoutError:
             raise LLMServiceError("LLM request timed out")
 
+        except Exception as e:
+            raise LLMServiceError(f"LLM failed: {str(e)}")
+        
+    async def complete_with_context(self, prompt: str, context: str) -> str:
+        try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant. "
+                        "Answer the user's question using ONLY the context provided below. "
+                        "If the answer is not in the context, say 'I don't have that information'. "
+                        f"\n\nContext:\n{context}"
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ]
+
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0,
+                    max_tokens=200
+                ),
+                timeout=10
+            )
+
+            return response.choices[0].message.content
+
+        except asyncio.TimeoutError:
+            raise LLMServiceError("LLM request timed out")
         except Exception as e:
             raise LLMServiceError(f"LLM failed: {str(e)}")
 

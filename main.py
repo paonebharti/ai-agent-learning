@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
 from app.schemas import UserRequest, UserResponse
+from app.services.rag_service import RAGService
 from dotenv import load_dotenv
 import os
 
@@ -10,6 +11,24 @@ app = FastAPI()
 
 use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 llm_service = LLMService(use_mock=use_mock)
+rag_service = RAGService()
+
+@app.get("/rag")
+async def rag_ask(q: str):
+    # Step 1: retrieve relevant chunks
+    chunks = rag_service.retrieve(q)
+
+    # Step 2: build context from chunks
+    context = "\n\n".join(chunks)
+
+    # Step 3: ask LLM with context injected
+    answer = await llm_service.complete_with_context(q, context)
+
+    return {
+        "question": q,
+        "context_used": chunks,
+        "answer": answer
+    }
 
 @app.get("/ask")
 async def ask(q: str):
