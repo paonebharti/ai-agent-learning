@@ -181,6 +181,56 @@ A stateful agent that remembers conversation context, handles tools correctly ac
 
 #### Outcome
 Agent memory now persists across server restarts with zero changes to the rest of the codebase.
+
+### ✅ Day 14 — Embeddings + Vector Search (Concept)
+
+#### What I learned
+- Embeddings convert text into a list of numbers (a **vector**) that captures meaning
+- Each number in the vector is called a **dimension** — OpenAI's default is 1536 dimensions
+- Text with similar meaning produces numerically similar vectors, regardless of word count or length
+- Similarity between vectors is measured using **cosine similarity** — a score between 0 and 1
+
+#### Key Concepts
+
+**Embedding vector**
+Any text — whether 10 words or 5 paragraphs — gets compressed into the same fixed-size
+vector (1536 dims). Length doesn't matter, meaning does.
+
+**Cosine similarity**
+Measures how close two vectors are in space.
+- Score close to 1.0 = very similar meaning
+- Score close to 0.0 = very different meaning
+
+**Chunking**
+Splitting a large document into smaller pieces before embedding. The LLM does not decide
+chunk size — you do. Common strategies:
+- Fixed size (e.g. every 500 tokens)
+- By paragraph (split on blank lines)
+- By sentence (split on punctuation)
+
+**RAG (Retrieval Augmented Generation)**
+Instead of pasting an entire document into the LLM, you:
+1. Split document into chunks and embed each one
+2. Store embeddings in a vector DB
+3. On each query, embed the question and find the most similar chunks
+4. Inject only the relevant chunks into the LLM prompt
+
+#### Rails Developer Mental Model
+| Concept | Rails equivalent |
+|---|---|
+| Embedding | Converting a record into a searchable index |
+| Vector DB | A database optimized for similarity search |
+| Similarity search | Like WHERE but for meaning, not exact match |
+| RAG | Like JOIN — fetching relevant context before responding |
+
+#### Key Learnings
+- A 10-word question and a 5-paragraph chunk both map to the same 1536-dimension space — length mismatch doesn't affect similarity
+- Chunk size is a design decision you make, not something the LLM decides
+- RAG solves the token limit problem — agents can now "search" thousands of documents without pasting everything into the prompt
+
+#### Outcome
+Strong conceptual foundation for Day 15 where we build a working RAG pipeline using ChromaDB and OpenAI embeddings.
+
 ---
 
 ## 🛠️ Tech Stack
