@@ -160,6 +160,45 @@ class LLMService:
         except Exception as e:
             raise LLMServiceError(f"LLM failed: {str(e)}")
 
+    async def execute_plan(self, query: str, steps: list) -> dict:
+        results = []
+
+        for step in steps:
+            tool = step.get("tool")
+            task = step.get("task")
+            inp = step.get("input")
+
+            print(f"⚙️ Step {step['step']}: {task}")
+
+            if tool == "get_weather" and inp:
+                result = await asyncio.to_thread(
+                    self.weather_service.get_weather, inp["city"]
+                )
+
+            elif tool == "currency_converter" and inp:
+                result = await asyncio.to_thread(
+                    self.currency_service.convert,
+                    inp["amount"],
+                    inp["from_currency"],
+                    inp["to_currency"]
+                )
+
+            else:
+                # no tool — LLM answers from its own knowledge
+                result = await self.complete(task)
+
+            results.append({"step": step["step"], "task": task, "result": result})
+            print(f"✅ Step {step['step']} result: {result}")
+
+        # final synthesis — combine all results into one answer
+        context = "\n".join([f"Step {r['step']} ({r['task']}): {r['result']}" for r in results])
+        final = await self.complete_with_context(query, context)
+
+        return {
+            "steps": results,
+            "final_answer": final
+        }
+
     async def _mock_response(self, prompt: str) -> str:
         await asyncio.sleep(1)
         return f"[MOCK RESPONSE]: {prompt}"

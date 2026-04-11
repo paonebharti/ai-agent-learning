@@ -311,6 +311,41 @@ ChromaDB handles all the similarity math (cosine similarity, ranking, top K) int
 A working RAG pipeline that retrieves semantically relevant knowledge and answers user questions
 accurately from a local vector store — without hallucinating answers outside its knowledge base.
 
+### ✅ Day 16 — Planner-Executor Pattern
+
+#### What I built
+- Built a `PlannerService` that converts a user query into a structured step-by-step plan
+- Added `execute_plan()` to `LLMService` — executes each step in order, using tools or LLM as needed
+- Added `/plan` endpoint — runs the full planner-executor loop and returns plan + results + final answer
+- Kept `/ask` intact — clean separation between simple and complex query handling
+
+#### Architecture
+User → `/plan` → PlannerService (generate steps) → LLMService (execute each step) → Final synthesis → User
+
+#### Query Flow
+User query → LLM generates JSON plan → each step executed (tool or LLM) → results synthesized → final answer
+
+#### Key Design Decisions
+- Planner returns strict JSON — `temperature=0` and explicit prompt ensure parseable output every time
+- Executor uses `complete()` for no-tool steps — not `complete_with_context()`, because general knowledge questions shouldn't be restricted to context
+- `complete_with_context()` is used only when tool results exist — grounds the LLM in actual data
+- `/ask` and `/plan` are kept separate — single responsibility, different use cases
+- Final synthesis pass combines all step results into one coherent answer
+
+#### Key Learnings
+- `complete()` vs `complete_with_context()` serve different purposes — never mix them blindly
+- Planner output must be strictly JSON — any extra text breaks `json.loads()` and crashes the executor
+- Multi-step queries need a planning phase — direct tool routing breaks down for complex queries
+- Each step result feeds into the next — order of execution matters
+
+#### Challenges Faced
+- General knowledge queries returned "I don't have that information" — fixed by using `complete()` instead of `complete_with_context()` for no-tool steps
+- Understanding when to ground the LLM in context vs let it answer freely
+
+#### Outcome
+An agent that can handle complex multi-step queries by planning first and executing second —
+cleanly separating reasoning from action.
+
 ---
 
 ## 🛠️ Tech Stack

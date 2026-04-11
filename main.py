@@ -1,9 +1,12 @@
+import os
+import json
+
 from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
+from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
 from app.services.rag_service import RAGService
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
@@ -11,17 +14,35 @@ app = FastAPI()
 
 use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 llm_service = LLMService(use_mock=use_mock)
+planner_service = PlannerService()
 rag_service = RAGService()
+
+@app.get("/plan")
+async def plan_and_execute(q: str):
+    try:
+        # Step 1: generate plan
+        steps = await planner_service.plan(q)
+        print(f"📋 Plan: {json.dumps(steps, indent=2)}")
+
+        # Step 2: execute plan
+        result = await llm_service.execute_plan(q, steps)
+
+        return {
+            "question": q,
+            "plan": steps,
+            "steps_executed": result["steps"],
+            "final_answer": result["final_answer"]
+        }
+
+    except LLMServiceError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 @app.get("/rag")
 async def rag_ask(q: str):
-    # Step 1: retrieve relevant chunks
     chunks = rag_service.retrieve(q)
 
-    # Step 2: build context from chunks
     context = "\n\n".join(chunks)
 
-    # Step 3: ask LLM with context injected
     answer = await llm_service.complete_with_context(q, context)
 
     return {
