@@ -3,6 +3,7 @@ import json
 
 from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
+from app.services.prompt_service import PromptService, PromptServiceError
 from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
 from app.services.rag_service import RAGService
@@ -14,6 +15,7 @@ app = FastAPI()
 
 use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 llm_service = LLMService(use_mock=use_mock)
+prompt_service = llm_service.prompt_service
 planner_service = PlannerService()
 rag_service = RAGService()
 
@@ -58,6 +60,27 @@ async def ask(q: str):
         return {"answer": answer}
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+@app.get("/prompts")
+def list_prompts():
+    return prompt_service.list_variants()
+
+@app.post("/prompts/activate/{key}")
+def activate_prompt(key: str):
+    try:
+        prompt_service.set_active(key)
+        return {"status": "activated", "active": key}
+    except PromptServiceError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/prompts/add")
+def add_prompt(key: str, name: str, system_prompt: str,
+               temperature: float = 0.2, max_tokens: int = 200):
+    try:
+        prompt_service.add_variant(key, name, system_prompt, temperature, max_tokens)
+        return {"status": "added", "key": key}
+    except PromptServiceError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/memory/clear")
 def clear_memory():

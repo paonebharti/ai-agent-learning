@@ -2,6 +2,7 @@ import json
 import asyncio
 from openai import AsyncOpenAI
 from app.services.memory_service import MemoryService
+from app.services.prompt_service import PromptService
 from app.services.weather_service import WeatherService
 from app.services.currency_service import CurrencyService
 
@@ -42,13 +43,6 @@ class LLMService:
         }
     ]
 
-    SYSTEM_PROMPT = (
-        "You are a helpful assistant with access to tools. "
-        "When the user asks about weather, use the get_weather tool. "
-        "When the user asks about currency conversion, use the currency_converter tool. "
-        "Never answer these questions from your own knowledge."
-    )
-
     def __init__(self, use_mock: bool = False):
         self.client = AsyncOpenAI()
         self.use_mock = use_mock
@@ -60,6 +54,7 @@ class LLMService:
             max_messages=20,
             persist_path="memory.json"
         )
+        self.prompt_service = PromptService()
 
     async def complete(self, prompt: str) -> str:
         if self.request_count >= self.max_requests:
@@ -71,10 +66,12 @@ class LLMService:
             if self.use_mock:
                 return await self._mock_response(prompt)
 
+            active = self.prompt_service.get_active()
+
             self.memory.add_user_message(prompt)
 
             messages = [
-                {"role": "system", "content": self.SYSTEM_PROMPT}
+                {"role": "system", "content": active["system_prompt"]}
             ] + self.memory.get_history()
 
             response = await asyncio.wait_for(
@@ -83,10 +80,10 @@ class LLMService:
                     messages=messages,
                     tools=self.TOOLS,
                     tool_choice="auto",
-                    temperature=0.2,
-                    max_tokens=100
+                    temperature=active["temperature"],
+                    max_tokens=active["max_tokens"]
                 ),
-                timeout=5
+                timeout=10
             )
 
             message = response.choices[0].message
@@ -101,20 +98,21 @@ class LLMService:
                 )
 
                 messages = [
-                    {"role": "system", "content": self.SYSTEM_PROMPT}
+                    {"role": "system", "content": active["system_prompt"]}
                 ] + self.memory.get_history()
 
                 final_response = await asyncio.wait_for(
                     self.client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=messages,
-                        temperature=0.2,
-                        max_tokens=200
+                        temperature=active["temperature"],
+                        max_tokens=active["max_tokens"]
                     ),
                     timeout=10
                 )
 
                 answer = final_response.choices[0].message.content
+
             else:
                 answer = message.content
 
@@ -127,7 +125,7 @@ class LLMService:
 
         except Exception as e:
             raise LLMServiceError(f"LLM failed: {str(e)}")
-        
+
     async def complete_with_context(self, prompt: str, context: str) -> str:
         try:
             messages = [
@@ -157,6 +155,32 @@ class LLMService:
 
         except asyncio.TimeoutError:
             raise LLMServiceError("LLM request timed out")
+
+        except Exception as e:
+            raise LLMServiceError(f"LLM failed: {str(e)}")
+
+    async def _complete_internal(self, prompt: str) -> str:
+        try:
+            active = self.prompt_service.get_active()
+
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": active["system_prompt"]},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=active["temperature"],
+                    max_tokens=active["max_tokens"]
+                ),
+                timeout=10
+            )
+
+            return response.choices[0].message.content
+
+        except asyncio.TimeoutError:
+            raise LLMServiceError("LLM request timed out")
+
         except Exception as e:
             raise LLMServiceError(f"LLM failed: {str(e)}")
 
@@ -184,8 +208,8 @@ class LLMService:
                 )
 
             else:
-                # no tool — LLM answers from its own knowledge
-                result = await self.complete(task)
+                # no tool — internal LLM call, no memory pollution
+                result = await self._complete_internal(task)
 
             results.append({"step": step["step"], "task": task, "result": result})
             print(f"✅ Step {step['step']} result: {result}")
@@ -212,7 +236,7 @@ class LLMService:
                 self.weather_service.get_weather,
                 args["city"]
             )
-        
+
         if function_name == "currency_converter":
             return await asyncio.to_thread(
                 self.currency_service.convert,

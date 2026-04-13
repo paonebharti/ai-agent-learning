@@ -346,6 +346,48 @@ User query → LLM generates JSON plan → each step executed (tool or LLM) → 
 An agent that can handle complex multi-step queries by planning first and executing second —
 cleanly separating reasoning from action.
 
+### ✅ Day 17 — Prompt Optimization (A/B Testing)
+
+#### What I built
+- Built a `PromptService` that loads prompt variants from a `prompts.json` file
+- Implemented prompt versioning — each variant has a name, system prompt, temperature, and max_tokens
+- Added endpoints to list variants, switch active variant, and add new variants at runtime
+- `LLMService` now loads the active prompt variant dynamically on every request — no hardcoded prompts
+- Added `_complete_internal()` to `LLMService` — lightweight internal LLM call that bypasses memory and request count, used by planner executor for no-tool steps
+
+#### Architecture
+`prompts.json` → `PromptService` → `LLMService.complete()` → active variant injected per request
+
+#### Endpoints Added
+- `GET /prompts` — list all variants and active variant
+- `POST /prompts/activate/{key}` — switch active variant without restarting server
+- `POST /prompts/add` — add a new variant at runtime
+
+#### Prompt Variants
+- `v1` — concise assistant, temperature 0.2, max_tokens 200 (default)
+- `v2` — detailed assistant, temperature 0.5, max_tokens 400
+- `v3` — minimal assistant, temperature 0.0, max_tokens 100
+
+#### Key Design Decisions
+- Prompts stored in JSON file — persistent across restarts, zero extra dependencies, same pattern as memory persistence
+- `temperature` and `max_tokens` are per-variant — different prompts may need different creativity levels
+- Active variant stored in `prompts.json` itself — switching persists across restarts
+- `_complete_internal()` added for planner executor — internal steps should not pollute conversation memory or increment request count
+- `PromptService` instance reused from `LLMService` in `main.py` — single source of truth, no duplicate instances
+
+#### Key Learnings
+- Hardcoded prompts are the enemy of experimentation — externalizing them enables rapid iteration
+- Temperature and max_tokens are part of prompt design, not just LLM configuration
+- Internal LLM calls (planner steps) should be separate from user-facing calls — different responsibilities
+- Prompt switching without server restart is essential for real A/B testing workflows
+
+#### Challenges Faced
+- `execute_plan()` was calling `complete()` for no-tool steps — this polluted memory and incremented request count incorrectly. Fixed by adding `_complete_internal()` as a lightweight alternative.
+
+#### Outcome
+A versioned prompt system where variants can be created, switched, and tested at runtime
+without touching code or restarting the server — enabling proper A/B testing of prompt behavior.
+
 ---
 
 ## 🛠️ Tech Stack
