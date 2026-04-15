@@ -388,6 +388,44 @@ cleanly separating reasoning from action.
 A versioned prompt system where variants can be created, switched, and tested at runtime
 without touching code or restarting the server — enabling proper A/B testing of prompt behavior.
 
+### ✅ Day 18 — Structured Output (JSON Mode + Schema Enforcement)
+
+#### What I built
+- Added `complete_structured()` to `LLMService` — returns enforced JSON instead of plain text
+- Added `/ask/structured` endpoint — returns typed, predictable JSON per query type
+- Added output schemas to `schemas.py` — `WeatherOutput`, `CurrencyOutput`, `GeneralOutput`, `StructuredResponse`
+- LLM uses real tool data (weather, currency) before formatting structured response
+- JSON response is cleaned and parsed — strips markdown fences before `json.loads()`
+
+#### Architecture
+User → `/ask/structured` → `complete_structured()` → tool call (if needed) → JSON formatting → validated response
+
+#### Output Schemas
+- `weather` — city, condition, temperature_celsius, humidity_percent, summary
+- `currency` — from_currency, to_currency, original_amount, converted_amount, summary
+- `general` — answer, confidence (high/medium/low), topics (list)
+
+#### Key Design Decisions
+- `complete_structured()` is separate from `complete()` — different responsibility, no memory involvement
+- `temperature=0` enforced — structured output must be deterministic, not creative
+- System prompt explicitly defines expected JSON shape per query type — LLM needs a contract to follow
+- JSON cleaning step (`replace("```json", "")`) handles cases where LLM wraps output in markdown fences
+- Tool call flow preserved — real weather/currency data fetched before formatting as structured JSON
+
+#### Key Learnings
+- LLMs need an explicit JSON contract in the system prompt — vague instructions produce inconsistent schemas
+- `temperature=0` is non-negotiable for structured output — any creativity breaks the schema
+- Always strip markdown fences before `json.loads()` — LLMs often wrap JSON in backticks even when told not to
+- Structured output and plain text output serve different clients — keep them as separate endpoints
+
+#### Challenges Faced
+- LLM occasionally wraps JSON in markdown fences despite being told not to — handled with `.replace()` cleanup
+- Tool result must be fetched first before asking LLM to format — two LLM calls needed for tool-based queries
+
+#### Outcome
+A `/ask/structured` endpoint that returns clean, typed, validated JSON with different schemas
+per query type — ready for consumption by any frontend or downstream service.
+
 ---
 
 ## 🛠️ Tech Stack

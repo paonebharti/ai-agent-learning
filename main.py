@@ -7,6 +7,7 @@ from app.services.prompt_service import PromptService, PromptServiceError
 from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
 from app.services.rag_service import RAGService
+from app.schemas import StructuredResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -58,6 +59,14 @@ async def ask(q: str):
     try:
         answer = await llm_service.complete(q)
         return {"answer": answer}
+    except LLMServiceError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+@app.get("/ask/structured")
+async def ask_structured(q: str):
+    try:
+        result = await llm_service.complete_structured(q)
+        return result
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
 

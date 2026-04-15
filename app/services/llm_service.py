@@ -223,6 +223,84 @@ class LLMService:
             "final_answer": final
         }
 
+    async def complete_structured(self, prompt: str) -> dict:
+        try:
+            active = self.prompt_service.get_active()
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a structured data assistant. "
+                        "Analyze the user query and respond ONLY with a valid JSON object. "
+                        "No markdown, no explanation, no extra text — just raw JSON.\n\n"
+                        "If the query is about weather, return:\n"
+                        '{"query_type": "weather", "city": "...", "condition": "...", '
+                        '"temperature_celsius": 0.0, "humidity_percent": 0, "summary": "..."}\n\n'
+                        "If the query is about currency, return:\n"
+                        '{"query_type": "currency", "from_currency": "...", "to_currency": "...", '
+                        '"original_amount": 0.0, "converted_amount": 0.0, "summary": "..."}\n\n'
+                        "For anything else, return:\n"
+                        '{"query_type": "general", "answer": "...", '
+                        '"confidence": "high|medium|low", "topics": ["..."]}'
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ]
+
+            # first get tool result if needed
+            tool_response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    tools=self.TOOLS,
+                    tool_choice="auto",
+                    temperature=0,
+                    max_tokens=300
+                ),
+                timeout=10
+            )
+
+            message = tool_response.choices[0].message
+
+            # if tool was called, get real data first
+            if message.tool_calls:
+                tool_call = message.tool_calls[0]
+                tool_result = await self._handle_tool_call(tool_call)
+
+                messages.append(message)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result
+                })
+
+                # now ask LLM to format tool result as structured JSON
+                final = await asyncio.wait_for(
+                    self.client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages,
+                        temperature=0,
+                        max_tokens=300
+                    ),
+                    timeout=10
+                )
+                raw = final.choices[0].message.content
+            else:
+                raw = message.content
+
+            # parse and validate JSON
+            clean = raw.strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(clean)
+            return parsed
+
+        except json.JSONDecodeError as e:
+            raise LLMServiceError(f"LLM returned invalid JSON: {str(e)}")
+        except asyncio.TimeoutError:
+            raise LLMServiceError("LLM request timed out")
+        except Exception as e:
+            raise LLMServiceError(f"LLM failed: {str(e)}")
+
     async def _mock_response(self, prompt: str) -> str:
         await asyncio.sleep(1)
         return f"[MOCK RESPONSE]: {prompt}"
