@@ -426,6 +426,38 @@ User → `/ask/structured` → `complete_structured()` → tool call (if needed)
 A `/ask/structured` endpoint that returns clean, typed, validated JSON with different schemas
 per query type — ready for consumption by any frontend or downstream service.
 
+### ✅ Day 19 — Guardrails (Input/Output Validation)
+
+#### What I built
+- `GuardrailService` with input and output validation
+- Input length limits (min/max character bounds)
+- Blocked pattern detection for common prompt injection attempts using regex
+- Output length cap with truncation
+- Sensitive content detection in LLM responses (API keys, tokens)
+- `GuardrailViolation` custom exception with `message` and `code` fields
+- Wired guardrails into `/ask` endpoint — clean query passed to LLM, safe response returned to user
+
+#### Architecture
+User → `/ask` → `GuardrailService.validate_input()` → `LLMService.complete()` → `GuardrailService.validate_output()` → Response
+
+#### Key Design Decisions
+- Guardrails live in a separate service, not inside `LLMService` — single responsibility
+- `validate_input()` returns the cleaned (stripped) query so the caller always gets sanitized input
+- `validate_output()` truncates long responses instead of blocking — recoverable problem
+- `GuardrailViolation` carries a `code` field for structured error responses, not just a message
+- Caught before `LLMServiceError` in the endpoint — specific exceptions always caught first
+
+#### Key Learnings
+- Regex patterns use `\s+` to catch injection attempts with extra spaces between words
+- Pattern matching runs on lowercased input to avoid case-bypass attempts
+- File-persisted memory can accumulate corrupted entries across days — a plain string in `memory.json` caused an OpenAI 400 error on startup
+
+#### Challenges Faced
+- First test hit a 400 from OpenAI (`messages[12]` invalid type) — not a guardrails bug but corrupted memory.json from a previous day. Fixed by calling `DELETE /memory/clear`
+
+#### Outcome
+The `/ask` endpoint now validates all input before it reaches the LLM and all output before it reaches the user. Prompt injection attempts are blocked with a structured 400 response. Responses exceeding the length cap are truncated. Sensitive content patterns in LLM output raise a guardrail violation. The agent is no longer completely open.
+
 ---
 
 ## 🛠️ Tech Stack

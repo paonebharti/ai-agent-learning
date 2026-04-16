@@ -4,10 +4,12 @@ import json
 from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
 from app.services.prompt_service import PromptService, PromptServiceError
+from app.services.guardrail_service import GuardrailService, GuardrailViolation
 from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
 from app.services.rag_service import RAGService
 from app.schemas import StructuredResponse
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +19,7 @@ app = FastAPI()
 use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 llm_service = LLMService(use_mock=use_mock)
 prompt_service = llm_service.prompt_service
+guardrail_service = GuardrailService()
 planner_service = PlannerService()
 rag_service = RAGService()
 
@@ -57,8 +60,15 @@ async def rag_ask(q: str):
 @app.get("/ask")
 async def ask(q: str):
     try:
-        answer = await llm_service.complete(q)
-        return {"answer": answer}
+        clean_query = guardrail_service.validate_input(q)
+        answer = await llm_service.complete(clean_query)
+        safe_answer = guardrail_service.validate_output(answer)
+        return {"answer": safe_answer}
+    except GuardrailViolation as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": e.message, "code": e.code}
+        )
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
