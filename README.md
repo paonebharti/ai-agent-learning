@@ -458,6 +458,36 @@ User → `/ask` → `GuardrailService.validate_input()` → `LLMService.complete
 #### Outcome
 The `/ask` endpoint now validates all input before it reaches the LLM and all output before it reaches the user. Prompt injection attempts are blocked with a structured 400 response. Responses exceeding the length cap are truncated. Sensitive content patterns in LLM output raise a guardrail violation. The agent is no longer completely open.
 
+### ✅ Day 20 — Streaming Responses
+
+#### What I built
+- `complete_stream()` async generator method in `LLMService`
+- `/ask/stream` endpoint using FastAPI's `StreamingResponse`
+- Input guardrails applied before stream starts
+- Full response accumulated across chunks and saved to memory after stream completes
+
+#### Architecture
+User → `/ask/stream` → `GuardrailService.validate_input()` → `LLMService.complete_stream()` → `StreamingResponse` (token by token) → User
+
+#### Key Design Decisions
+- `complete_stream()` is a separate method — not a replacement for `complete()`. Streaming only makes sense as the last step before the user; all other services need a complete string
+- Guardrail validation happens before `StreamingResponse` is returned — once streaming starts, a 400 can no longer be sent
+- `full_response` is accumulated during streaming so memory gets the complete message, same as `complete()`
+- No archive needed — only a new method and endpoint were added, no existing code was modified
+
+#### Key Learnings
+- `yield` pauses the function and sends a value, then resumes — keeping the function alive across all chunks
+- `return` ends the function immediately — incompatible with streaming
+- `StreamingResponse` accepts an async generator directly
+- Output guardrails are not applicable to streaming — by the time the full response exists, the user has already received it
+- This is a real tradeoff: `/ask` can validate output, `/ask/stream` cannot
+
+#### Challenges Faced
+- None — clean addition with no changes to existing logic
+
+#### Outcome
+The agent now supports token-by-token streaming via `/ask/stream`. Users see responses appearing word by word instead of waiting for the full response. Input guardrails are enforced before streaming begins. The complete response is saved to memory after the stream finishes.
+
 ---
 
 ## 🛠️ Tech Stack

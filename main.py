@@ -8,6 +8,7 @@ from app.services.guardrail_service import GuardrailService, GuardrailViolation
 from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
 from app.services.rag_service import RAGService
+from fastapi.responses import StreamingResponse
 from app.schemas import StructuredResponse
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -71,6 +72,21 @@ async def ask(q: str):
         )
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+@app.get("/ask/stream")
+async def ask_stream(q: str):
+    try:
+        clean_query = guardrail_service.validate_input(q)
+    except GuardrailViolation as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": e.message, "code": e.code}
+        )
+
+    return StreamingResponse(
+        llm_service.complete_stream(clean_query),
+        media_type="text/plain"
+    )
 
 @app.get("/ask/structured")
 async def ask_structured(q: str):

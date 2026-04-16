@@ -126,6 +126,38 @@ class LLMService:
         except Exception as e:
             raise LLMServiceError(f"LLM failed: {str(e)}")
 
+    async def complete_stream(self, prompt: str):
+        if self.request_count >= self.max_requests:
+            raise LLMServiceError("LLM usage limit reached")
+
+        self.request_count += 1
+
+        active = self.prompt_service.get_active()
+
+        self.memory.add_user_message(prompt)
+
+        messages = [
+            {"role": "system", "content": active["system_prompt"]}
+        ] + self.memory.get_history()
+
+        stream = await self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=active["temperature"],
+            max_tokens=active["max_tokens"],
+            stream=True
+        )
+
+        full_response = ""
+
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                full_response += delta
+                yield delta
+
+        self.memory.add_assistant_message(full_response)
+
     async def complete_with_context(self, prompt: str, context: str) -> str:
         try:
             messages = [
