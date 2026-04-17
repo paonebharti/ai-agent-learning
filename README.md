@@ -524,6 +524,36 @@ Request → `/ask` → `LLMService.complete()` → log request → OpenAI → lo
 #### Outcome
 The agent now has structured logging across all LLM interactions written to both terminal and `agent.log`. Token usage is captured per request and accumulated across the session. The `/stats` endpoint exposes total requests, token counts, and estimated API cost in USD. Context bloat is now clearly visible — a simple question costs 955 prompt tokens due to memory history being included in every request.
 
+### ✅ Day 22 — Hardening: Load Testing and Runbook
+
+#### What I built
+- `locustfile.py` — load test with 4 tasks weighted by frequency
+- `RUNBOOK.md` — operational reference covering startup, health checks, and 7 known failure modes
+- Identified a real concurrency bug under load — shared MemoryService corrupts context across concurrent requests
+
+#### Architecture
+Locust → 10 simulated users → FastAPI endpoints → LLMService → OpenAI API
+
+#### Key Design Decisions
+- Load test targets `/ask`, `/ask` with weather, `/health`, and `/stats` — weighted to reflect realistic traffic distribution
+- `wait_time = between(1, 3)` — mimics real user behavior, not hammer-mode
+- Runbook documents every known failure mode with symptom, cause, and fix — written for 2am debugging
+- `max_requests` temporarily bumped to 200 for load testing, reverted after
+
+#### Key Learnings
+- Load testing surfaces bugs that never appear in single-request testing
+- Shared mutable state (MemoryService) is unsafe under concurrency — race conditions corrupt message history
+- A tool role message in memory without its preceding tool_calls message causes OpenAI to reject the request with a 400
+- Runbooks are not optional in production — they are the difference between a 5-minute fix and a 2-hour outage
+
+#### Challenges Faced
+- 26% failure rate under 10 concurrent users — traced to shared MemoryService race condition
+- Tool interaction from one request corrupted memory context for concurrent requests
+- Fix identified: isolate MemoryService per session_id — deferred as a known issue in runbook
+
+#### Outcome
+Load testing revealed a real concurrency bug in MemoryService under concurrent requests — 50 out of 192 requests failed with a 503 due to orphaned tool role messages in shared memory. The bug is documented in the runbook with a known fix. The runbook covers 7 failure modes, all environment variables, useful endpoints, and log locations. The agent is now operationally documented for production-like use.
+
 ---
 
 ## 🛠️ Tech Stack
