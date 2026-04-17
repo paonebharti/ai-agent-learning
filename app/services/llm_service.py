@@ -1,10 +1,14 @@
 import json
 import asyncio
+
 from openai import AsyncOpenAI
+from app.logger import get_logger
 from app.services.memory_service import MemoryService
 from app.services.prompt_service import PromptService
 from app.services.weather_service import WeatherService
 from app.services.currency_service import CurrencyService
+
+logger = get_logger("llm_service")
 
 class LLMServiceError(Exception):
     pass
@@ -55,6 +59,9 @@ class LLMService:
             persist_path="memory.json"
         )
         self.prompt_service = PromptService()
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_requests = 0
 
     async def complete(self, prompt: str) -> str:
         if self.request_count >= self.max_requests:
@@ -67,12 +74,13 @@ class LLMService:
                 return await self._mock_response(prompt)
 
             active = self.prompt_service.get_active()
-
             self.memory.add_user_message(prompt)
 
             messages = [
                 {"role": "system", "content": active["system_prompt"]}
             ] + self.memory.get_history()
+
+            logger.info(f"LLM request | prompt: {prompt[:60]}")
 
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
@@ -87,15 +95,21 @@ class LLMService:
             )
 
             message = response.choices[0].message
+            usage = response.usage
+
+            logger.info(
+                f"LLM response | tokens: prompt={usage.prompt_tokens} "
+                f"completion={usage.completion_tokens} total={usage.total_tokens}"
+            )
+            self._track_usage(usage)
 
             if message.tool_calls:
                 tool_call = message.tool_calls[0]
+                logger.info(f"Tool called | {tool_call.function.name} args={tool_call.function.arguments}")
 
                 tool_result = await self._handle_tool_call(tool_call)
 
-                self.memory.add_tool_interaction(
-                    message, tool_call.id, tool_result
-                )
+                self.memory.add_tool_interaction(message, tool_call.id, tool_result)
 
                 messages = [
                     {"role": "system", "content": active["system_prompt"]}
@@ -112,18 +126,25 @@ class LLMService:
                 )
 
                 answer = final_response.choices[0].message.content
+                final_usage = final_response.usage
+                logger.info(
+                    f"LLM final response | tokens: prompt={final_usage.prompt_tokens} "
+                    f"completion={final_usage.completion_tokens} total={final_usage.total_tokens}"
+                )
+                self._track_usage(final_usage)
 
             else:
                 answer = message.content
 
             self.memory.add_assistant_message(answer)
-
             return answer
 
         except asyncio.TimeoutError:
+            logger.error("LLM request timed out")
             raise LLMServiceError("LLM request timed out")
 
         except Exception as e:
+            logger.error(f"LLM failed: {str(e)}")
             raise LLMServiceError(f"LLM failed: {str(e)}")
 
     async def complete_stream(self, prompt: str):
@@ -356,3 +377,8 @@ class LLMService:
             )
 
         return "Unknown tool"
+
+    def _track_usage(self, usage):
+        self.total_prompt_tokens += usage.prompt_tokens
+        self.total_completion_tokens += usage.completion_tokens
+        self.total_requests += 1

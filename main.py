@@ -96,6 +96,19 @@ async def ask_structured(q: str):
     except LLMServiceError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+@app.get("/stats")
+def stats():
+    return {
+        "total_requests": llm_service.total_requests,
+        "total_prompt_tokens": llm_service.total_prompt_tokens,
+        "total_completion_tokens": llm_service.total_completion_tokens,
+        "total_tokens": llm_service.total_prompt_tokens + llm_service.total_completion_tokens,
+        "estimated_cost_usd": round(
+            (llm_service.total_prompt_tokens / 1_000_000 * 0.15) +
+            (llm_service.total_completion_tokens / 1_000_000 * 0.60), 6
+        )
+    }
+
 @app.get("/prompts")
 def list_prompts():
     return prompt_service.list_variants()

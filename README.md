@@ -488,6 +488,42 @@ User → `/ask/stream` → `GuardrailService.validate_input()` → `LLMService.c
 #### Outcome
 The agent now supports token-by-token streaming via `/ask/stream`. Users see responses appearing word by word instead of waiting for the full response. Input guardrails are enforced before streaming begins. The complete response is saved to memory after the stream finishes.
 
+### ✅ Day 21 — Observability: Logging and Token Tracking
+
+#### What I built
+- Centralized logger in `app/logger.py` using Python's built-in `logging` module
+- Log output to both terminal and `agent.log` file
+- `LOG_LEVEL` configurable via `.env` — no code changes needed to switch levels
+- Structured log entries for every LLM request, response, tool call, and error in `complete()`
+- Token usage logged per request — prompt, completion, and total tokens
+- In-memory token accumulation via `_track_usage()` helper in `LLMService`
+- `/stats` endpoint — total requests, tokens, and estimated cost in USD at runtime
+
+#### Architecture
+Request → `/ask` → `LLMService.complete()` → log request → OpenAI → log tokens → `_track_usage()` → log response → `/stats` reflects accumulated totals
+
+#### Key Design Decisions
+- One central logger, not per-service loggers — consistent format, single configuration, right scale for this project
+- `prompt[:60]` in log statements — avoids flooding logs with long inputs
+- Token usage comes from `response.usage` — data OpenAI already returns, we were just ignoring it
+- `_track_usage()` called after both the first and final response in tool call flows — both calls consume tokens
+- Cost formula uses GPT-4o-mini pricing: $0.15/M prompt tokens, $0.60/M completion tokens
+- Stats are in-memory — reset on restart. Acceptable for learning, production would persist to a database
+
+#### Key Learnings
+- `logging` module supports levels (DEBUG, INFO, WARNING, ERROR) — filterable by severity
+- `StreamHandler` + `FileHandler` together means logs appear in terminal and persist to file
+- `get_logger(name)` factory pattern — any module grabs the same underlying logger by name
+- Prompt tokens were 955 for a simple question — full memory history bundled into every request
+- This is context bloat — the longer memory grows, the more tokens every request burns
+- Observability makes invisible problems visible — token bloat was always happening, now we can see it
+
+#### Challenges Faced
+- None — clean addition. `httpx` logs appearing from OpenAI SDK internals — expected, not our code
+
+#### Outcome
+The agent now has structured logging across all LLM interactions written to both terminal and `agent.log`. Token usage is captured per request and accumulated across the session. The `/stats` endpoint exposes total requests, token counts, and estimated API cost in USD. Context bloat is now clearly visible — a simple question costs 955 prompt tokens due to memory history being included in every request.
+
 ---
 
 ## 🛠️ Tech Stack

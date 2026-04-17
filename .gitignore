@@ -2,3 +2,4 @@ __pycache__/
 venv/
 .env
 memory.json
+agent.log
