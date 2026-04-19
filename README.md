@@ -554,6 +554,41 @@ Locust → 10 simulated users → FastAPI endpoints → LLMService → OpenAI AP
 #### Outcome
 Load testing revealed a real concurrency bug in MemoryService under concurrent requests — 50 out of 192 requests failed with a 503 due to orphaned tool role messages in shared memory. The bug is documented in the runbook with a known fix. The runbook covers 7 failure modes, all environment variables, useful endpoints, and log locations. The agent is now operationally documented for production-like use.
 
+### ✅ Day 23 — Multi-Agent Systems
+
+#### What I built
+- `app/agents/` package with four files: `base_agent.py`, `weather_agent.py`, `currency_agent.py`, `orchestrator_agent.py`
+- `BaseAgent` — shared base class with `_complete()` infrastructure and `run()` interface
+- `WeatherAgent` — specialist agent, owns only weather tool and weather system prompt
+- `CurrencyAgent` — specialist agent, owns only currency tool and currency system prompt
+- `OrchestratorAgent` — decides which agents to invoke, runs them concurrently, synthesizes final answer
+- `/agent` endpoint — entry point for the multi-agent system with guardrail validation
+
+#### Architecture
+User → `/agent` → `GuardrailService.validate_input()` → `OrchestratorAgent.run()` → decide → `asyncio.gather(WeatherAgent, CurrencyAgent)` → synthesize → Response
+
+#### Key Design Decisions
+- Each specialist agent has its own `TOOLS` constant — tight scoping prevents unintended tool access
+- Orchestrator has no tools — it only decides and synthesizes, never executes
+- `asyncio.gather` runs specialist agents concurrently — parallel execution, not sequential
+- Fresh `AsyncOpenAI` client created per call, not shared across agents — prevents concurrent request interference
+- Orchestrator returns JSON decision with `agents` and `reasoning` fields — structured, debuggable
+- Falls back to direct LLM call when no specialist agents are needed
+
+#### Key Learnings
+- Multi-agent differs from PlannerService — each agent is fully independent with its own prompt, tools, and context
+- Shared mutable state across concurrent async calls causes hard-to-debug interference — same root cause as Day 22 load test bug
+- `model_dump(exclude_unset=True)` converts OpenAI response objects to clean dicts — required when appending to messages for subsequent calls
+- `asyncio.gather` concurrency is visible in logs — both agents started 1ms apart
+- Orchestrator pattern: decide → delegate → synthesize. Three clean steps, never overlap
+
+#### Challenges Faced
+- Third query (weather + currency) failed with 400 — shared `AsyncOpenAI` client caused concurrent interference. Fixed by creating a fresh client per call inside `_complete()` and `run()`
+- Raw OpenAI message object appended to messages instead of dict — caused tool message ordering error. Fixed with `message.model_dump(exclude_unset=True)`
+
+#### Outcome
+The `/agent` endpoint now routes queries through a multi-agent system. The orchestrator analyzes the query, selects the appropriate specialist agents, runs them concurrently via `asyncio.gather`, and synthesizes a single coherent answer. A query requiring both weather and currency data is handled by two agents running in parallel — visible in logs as a 1ms gap between agent starts. Both concurrency bugs encountered were real production gotchas, now documented and fixed.
+
 ---
 
 ## 🛠️ Tech Stack

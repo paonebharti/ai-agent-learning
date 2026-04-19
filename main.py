@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, status
 from app.services.llm_service import LLMService, LLMServiceError
 from app.services.prompt_service import PromptService, PromptServiceError
 from app.services.guardrail_service import GuardrailService, GuardrailViolation
+from app.agents.orchestrator_agent import OrchestratorAgent
 from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
 from app.services.rag_service import RAGService
@@ -22,7 +23,22 @@ llm_service = LLMService(use_mock=use_mock)
 prompt_service = llm_service.prompt_service
 guardrail_service = GuardrailService()
 planner_service = PlannerService()
+orchestrator = OrchestratorAgent()
 rag_service = RAGService()
+
+@app.get("/agent")
+async def agent(q: str):
+    try:
+        clean_query = guardrail_service.validate_input(q)
+        answer = await orchestrator.run(clean_query)
+        return {"answer": answer}
+    except GuardrailViolation as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": e.message, "code": e.code}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 @app.get("/plan")
 async def plan_and_execute(q: str):
