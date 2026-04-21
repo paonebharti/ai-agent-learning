@@ -589,6 +589,38 @@ User → `/agent` → `GuardrailService.validate_input()` → `OrchestratorAgent
 #### Outcome
 The `/agent` endpoint now routes queries through a multi-agent system. The orchestrator analyzes the query, selects the appropriate specialist agents, runs them concurrently via `asyncio.gather`, and synthesizes a single coherent answer. A query requiring both weather and currency data is handled by two agents running in parallel — visible in logs as a 1ms gap between agent starts. Both concurrency bugs encountered were real production gotchas, now documented and fixed.
 
+### ✅ Day 24 — Production Patterns: Authentication and Rate Limiting
+
+#### What I built
+- `app/dependencies.py` — FastAPI dependencies for auth and rate limiting
+- `verify_api_key` — API key authentication via `X-Api-Key` header
+- `RateLimiter` — in-memory sliding window rate limiter, 10 requests per minute per client
+- `check_rate_limit` — FastAPI dependency that enforces rate limit per API key
+- Both dependencies applied globally to all endpoints via `FastAPI(dependencies=[...])`
+
+#### Architecture
+Request → FastAPI global dependencies → `verify_api_key` → `check_rate_limit` → endpoint handler
+
+#### Key Design Decisions
+- Dependencies applied globally — one line protects every endpoint, no per-endpoint boilerplate
+- Rate limit bucket keyed by API key — different clients get independent windows
+- Sliding window over fixed window — window moves with time, no burst allowed at window boundaries
+- `os.getenv()` called inside the function, not at module level — ensures `.env` is loaded before key is read
+- Only first 6 characters of attempted key logged — enough to debug without logging sensitive data
+
+#### Key Learnings
+- FastAPI dependencies are gates — they run before the endpoint and can raise exceptions to stop the request
+- Missing header → 422 (FastAPI handles automatically), wrong key → 401, rate exceeded → 429 — each has a distinct meaning
+- Module-level `os.getenv()` runs at import time before `load_dotenv()` — always read env vars inside functions
+- 4xx errors are client's fault, 5xx are server's fault — 500 for missing `AGENT_API_KEY` is correct, it's a server misconfiguration
+- Sliding window prunes old timestamps on every request — simple, effective, no background jobs needed
+
+#### Challenges Faced
+- `AGENT_API_KEY` returned `None` despite being set in `.env` — caused by module-level `os.getenv()` running before `load_dotenv()`. Fixed by moving the lookup inside the dependency function.
+
+#### Outcome
+Every endpoint is now protected by API key authentication and rate limiting. Requests without a key get a 422, requests with a wrong key get a 401, and clients exceeding 10 requests per minute get a 429. Both protections are applied globally in a single line — no per-endpoint changes needed. The agent is now production-hardened against unauthorized access and abuse.
+
 ---
 
 ## 🛠️ Tech Stack

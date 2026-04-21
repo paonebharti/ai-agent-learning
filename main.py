@@ -1,10 +1,11 @@
 import os
 import json
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
 from app.services.llm_service import LLMService, LLMServiceError
 from app.services.prompt_service import PromptService, PromptServiceError
 from app.services.guardrail_service import GuardrailService, GuardrailViolation
+from app.dependencies import verify_api_key, check_rate_limit
 from app.agents.orchestrator_agent import OrchestratorAgent
 from app.services.planner_service import PlannerService
 from app.schemas import UserRequest, UserResponse
@@ -16,7 +17,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(
+    dependencies=[
+        Depends(verify_api_key),
+        Depends(check_rate_limit)
+    ]
+)
 
 use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
 llm_service = LLMService(use_mock=use_mock)
